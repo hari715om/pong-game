@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multiplayer Pong</title>
+    <style>
+        body { 
+            background-color: #1a1a2e; 
+            color: white; 
+            font-family: 'Courier New', Courier, monospace;
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        canvas { 
+            background-color: #0f3460; 
+            border: 4px solid #e94560;
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+        }
+        #status { margin-bottom: 10px; font-size: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="status">Connecting...</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const statusDiv = document.getElementById("status");
+
+        let playerNo = 0; // 1 or 2
+        
+        // Settings (Must match server)
+        const PADDLE_WIDTH = 15;
+        const PADDLE_HEIGHT = 100;
+        const BALL_SIZE = 15;
+
+        // Auto-detect if using Secure (WSS) or Normal (WS) sockets
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const ws = new WebSocket(protocol + window.location.host + "/ws");
+
+        ws.onopen = () => {
+            statusDiv.innerText = "Connected! Waiting for match...";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'init') {
+                playerNo = data.player_no;
+                statusDiv.innerText = `You are Player ${playerNo}. Waiting for opponent...`;
+                if(playerNo === 1) statusDiv.style.color = "#4cc9f0"; // Blue
+                if(playerNo === 2) statusDiv.style.color = "#f72585"; // Pink
+            }
+            
+            if (data.type === 'update') {
+                if (statusDiv.innerText.includes("Waiting")) {
+                    statusDiv.innerText = `Match in Progress! You are Player ${playerNo}`;
+                }
+                drawGame(data);
+            }
+        };
+
+        // --- INPUT HANDLING ---
+        let currentDirection = 0;
+
+        document.addEventListener('keydown', (e) => {
+            let newDirection = currentDirection;
+            if (e.key === 'w' || e.key === 'ArrowUp') newDirection = -1;
+            if (e.key === 's' || e.key === 'ArrowDown') newDirection = 1;
+
+            if (newDirection !== currentDirection) {
+                currentDirection = newDirection;
+                sendInput();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (['w', 's', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                currentDirection = 0;
+                sendInput();
+            }
+        });
+
+        function sendInput() {
+            if (playerNo === 0) return;
+            ws.send(JSON.stringify({
+                type: 'input',
+                player: playerNo,
+                direction: currentDirection
+            }));
+        }
+
+        // --- DRAWING ---
+        function drawGame(state) {
+            // Clear Screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Net
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+            ctx.setLineDash([10, 15]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+
+            // Draw Paddles
+            ctx.fillStyle = "#4cc9f0"; // Player 1 Blue
+            ctx.fillRect(0, state.p1_y, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            ctx.fillStyle = "#f72585"; // Player 2 Pink
+            ctx.fillRect(canvas.width - PADDLE_WIDTH, state.p2_y, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            // Draw Ball
+            ctx.fillStyle = "#ffdd00";
+            ctx.fillRect(state.ball_x, state.ball_y, BALL_SIZE, BALL_SIZE);
+
+            // Draw Scores
+            ctx.font = "50px Courier New";
+            ctx.fillStyle = "white";
+            ctx.fillText(state.score_p1, canvas.width / 4, 60);
+            ctx.fillText(state.score_p2, 3 * canvas.width / 4, 60);
+        }
+    </script>
+</body>
+</html>
